@@ -7,6 +7,41 @@ import random
 import threading
 import time
 import queue
+from faceRecognition import reconocerCaras, crearCodificacion
+import json
+import numpy as np
+
+# Funcion para cargar un mapa en formato JSON
+def cargar_json(filename):
+    # Cargar el archivo JSON con el mapa 
+    with open(filename, "r") as file:
+        try: 
+            return json.load(file)
+        except json.JSONDecodeError:
+            print("El archivo JSON esta vacio")
+            return {}
+
+
+def add_user(name, codificacion, file_path):
+    data = cargar_json(file_path)
+
+    data[name] = {
+        "nombre": name,
+        "codificacion": codificacion[0].tolist(),  # Convert NumPy array to list
+        "puntuacion": 0,
+    }
+
+    # Guardar el diccionario actualizado en el archivo
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
+
+
+# Funcion para sobreescribir un mapa
+def guardar_json(mapa, filename):
+    # Guardar el mapa en el archivo JSON
+    with open(filename, "w") as file:
+        json.dump(mapa, file, indent=4)
+
 
 # Función que añade a una cola lo que se dice por el micrófono
 def escuchar(colaVoz, eventoVoz):
@@ -36,6 +71,7 @@ def randomTeam():
 
 
 def main():
+    # Generacion de equipo aleatorio
     team = randomTeam()
     equipment = cv2.imread(f"./img/{team}.png")
 
@@ -52,14 +88,25 @@ def main():
 
     fondo = cv2.resize(equipment, (ancho,alto))
 
+    # Inicialización de colas y listas
+    usuarios = cargar_json("bbdd.json")    # Cargar los usuarios del archivo JSON
     colaVoz = queue.Queue()
+    colaCodificaciones = queue.Queue()
+    carasConocidas, nombresConocidos = [], []
 
     # Inicializar threads de voz y de cara
     evento_voz = threading.Event()
     hilo_datos = threading.Thread(target=escuchar, daemon=True, args=(colaVoz, evento_voz))
     hilo_datos.start()
 
+    # Inicializacion de variables para la respuesta por pantalla
     respuesta = None
+    fuente = cv2.FONT_HERSHEY_PLAIN
+    color = (0, 0, 0)  # Negro
+    ubicacion = (10, 50)  # Posición del texto (x, y)
+    texto = "Que equipo es?"
+
+    inicioSesion = False
 
     # Bucle principal
     while cap.isOpened():
@@ -79,28 +126,61 @@ def main():
         bg =  cv2.bitwise_and(fondo, mascarabg)
         framebgr = cv2.bitwise_or(fg, bg)
 
-        respuesta = None
-        evento_voz.set()
-        if not colaVoz.empty():
-            respuesta = colaVoz.get()
-            evento_voz.clear()
-            # Imprimir texto en la pantalla
-            if respuesta == team:
-                texto = "Respuesta correcta!!"
-                ubicacion = (10, 50)  # Posición del texto (x, y)
-                cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
-            elif respuesta is not None:
-                texto = f"Respuesta incorrecta: {respuesta}"
-                ubicacion = (10, 50)
-                cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
+
+        if inicioSesion is True:
+            respuesta = None
+            evento_voz.set()
+            if not colaVoz.empty():
+                respuesta = colaVoz.get()
+                evento_voz.clear()
+                print(team, respuesta)
+                # Imprimir texto en la pantalla
+                if respuesta == team:
+                    texto = "Respuesta correcta!!"
+                    print("Texto: ", texto)
+                elif respuesta is not None:
+                    texto = f"Respuesta incorrecta: {respuesta}"
+                else:
+                    texto = "Que equipo es?"
+        else:
+            # Recargar JSON por si se crea un nuevo perfil
+            usuarios = cargar_json("bbdd.json")
+            # Iniciar sesión
+            nombre = reconocerCaras(usuarios, framebgr)
+            
+            if nombre is not None:
+                inicioSesion = True
+                # Cargar sesion si se ha reconocido la cara
+                print(f"Bienvenido, {nombre}") 
             else:
-                texto = "Que equipo es?"
-                ubicacion = (10, 50)
+                # Crear perfil de usuario 
+                print("No se ha reconocido tu cara. Como te llamas?")
+
+                # Preguntar al usuario su nombre mediante voz
+                nombre = None
+                evento_voz.set() # Activar la escucha del microfono
+                while nombre is None:
+                    cv2.imshow('FutGuesser - Guess the football team.', framebgr)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        exit(0)
+                    ret, framebgr = cap.read()
+
+                    if not colaVoz.empty():
+                        nombre = colaVoz.get()
+                        evento_voz.clear() # Desactivar la escucha del microfono
+                        print("Se va a escanear tu cara, " + nombre + ". Por favor, mira al frente y no te muevas")
+
+                        # Tomar frames para crear la codificación de la cara durante 3 segundos
+                        codificacion = crearCodificacion(framebgr)
+                        add_user(nombre, codificacion, "bbdd.json")                   
+                        print("Usuario registrado. Bienvenido, " + nombre + ".")
+                    
+                texto = "Bienvenido, " + nombre + ". Tu perfil ha sido creado"
                 cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
-
-        fuente = cv2.FONT_HERSHEY_PLAIN
-        color = (255, 255, 255)  # Blanco
-
+                cv2.imshow('FutGuesser - Guess the football team.', framebgr)
+                inicioSesion = True
+        
+        cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
         
         cv2.imshow('FutGuesser - Guess the football team.', framebgr)
 

@@ -1,21 +1,41 @@
+import cv2
+import face_recognition
+import pyaudio
+import sounddevice
 import speech_recognition as sr
+import random
+import threading
+import time
+import queue
 
-def recognize_speech_from_mic():
-    recognizer = sr.Recognizer()
-    microphone = sr.Microphone()
+# Función que añade a una cola lo que se dice por el micrófono
+def escuchar(colaVoz, eventoVoz):
+    r = sr.Recognizer()
+    transcripcion = None
+    while True:
+        if eventoVoz.is_set():
+            with sr.Microphone() as source:
+                print("Escuchando...")
+                r.adjust_for_ambient_noise(source)
+                audio = r.listen(source)
+                print("Procesando...")
+                try:
+                    transcripcion = r.recognize_google(audio, language='es-ES')
+                    print("Google Speech Recognition thinks you said " + transcripcion)
+                except sr.UnknownValueError:
+                    transcripcion = None
+                except sr.RequestError:
+                    transcripcion = None
+                colaVoz.put(transcripcion)
 
-    with microphone as source:
-        print("Please say something...")
-        audio = recognizer.listen(source)
+def main():
+    
+    cv2.namedWindow("FutGuesser - Guess the football team.")
 
-    try:
-        print("Recognizing...")
-        text = recognizer.recognize_google(audio, language="es-ES")
-        print("You said: {}".format(text))
-    except sr.RequestError:
-        print("API unavailable")
-    except sr.UnknownValueError:
-        print("Unable to recognize speech")
+    cap = cv2.VideoCapture(0)
 
-if __name__ == "_main_":
-    recognize_speech_from_mic()
+    if not cap.isOpened():
+        print("Couldn't open the camera. Exiting...")
+        exit()
+    
+    
