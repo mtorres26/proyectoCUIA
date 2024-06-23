@@ -107,7 +107,6 @@ def main():
     texto = "Que equipo es?"
 
     inicioSesion = False
-    usuario = None
 
     usuarios = cargar_json("bbdd.json")
 
@@ -130,35 +129,13 @@ def main():
         framebgr = cv2.bitwise_or(fg, bg)
 
         # Si la codificacion de la cara esta almacenada en el JSON
-        if inicioSesion is True:
-            respuesta = None
-            usuarios = cargar_json("bbdd.json") 
-            usuario = reconocerCaras(usuarios, framebgr)
-            evento_voz.set()
-            if not colaVoz.empty():
-                respuesta = colaVoz.get()
-                evento_voz.clear()
-                # Imprimir texto en la pantalla
-                if respuesta is not None:
-                    if team in respuesta:
-                        usuarios = cargar_json("bbdd.json") 
-                        sumarPuntuacion(usuario["nombre"], "bbdd.json")
-                        usuarios = cargar_json("bbdd.json") 
-                        punt = usuarios[usuario["nombre"]]["puntuacion"]
-                        texto = f"Respuesta correcta!! Puntuacion: {punt}"
-                    elif respuesta is not None:
-                        texto = f"Respuesta incorrecta: {respuesta}"
-                    else:
-                        texto = "Que equipo es?"
-                        
-        # Si la codificacion de la cara no esta almacenada en el JSON
-        else:
+        if not inicioSesion:
             # Recargar JSON por si se crea un nuevo perfil
             usuarios = cargar_json("bbdd.json")
             # Iniciar sesión
             usuario = reconocerCaras(usuarios, framebgr)
             
-            if usuario is not None:
+            if usuario:
                 inicioSesion = True
                 # Cargar sesion si se ha reconocido la cara
                 print(f"Bienvenido, {usuario['nombre']}") 
@@ -183,11 +160,8 @@ def main():
                         # Tomar frames para crear la codificación de la cara durante 3 segundos
                         codificacion = crearCodificacion(framebgr)
                         add_user(nombre, codificacion, "bbdd.json")
-                        usuario = {
-                            "nombre": nombre,
-                            "codificacion": codificacion[0].tolist(),
-                            "puntuacion": 0
-                        }                  
+                        usuarios = cargar_json("bbdd.json")
+                        usuario = reconocerCaras(usuarios, framebgr)               
                         print("Usuario registrado. Bienvenido, " + nombre + ".")
                     
                 texto = "Bienvenido, " + nombre + ". Tu perfil ha sido creado"
@@ -195,6 +169,28 @@ def main():
                 cv2.imshow('FutGuesser - Guess the football team.', framebgr)
                 usuario = reconocerCaras(usuarios, framebgr)
                 inicioSesion = True
+                        
+        # Si la codificacion de la cara no esta almacenada en el JSON
+        else:
+            respuesta = None
+            #usuarios = cargar_json("bbdd.json") 
+            #usuario = reconocerCaras(usuarios, framebgr)
+            evento_voz.set()
+            if not colaVoz.empty():
+                respuesta = colaVoz.get()
+                evento_voz.clear()
+                # Imprimir texto en la pantalla
+                if respuesta is not None:
+                    if team in respuesta:
+                        usuarios = cargar_json("bbdd.json") 
+                        sumarPuntuacion(usuario["nombre"], "bbdd.json")
+                        usuarios = cargar_json("bbdd.json") 
+                        punt = usuarios[usuario["nombre"]]["puntuacion"]
+                        texto = f"Respuesta correcta!! Puntuacion: {punt}"
+                    elif respuesta is not None:
+                        texto = f"Respuesta incorrecta: {respuesta}"
+                    else:
+                        texto = "Que equipo es?"
         
         cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
         
