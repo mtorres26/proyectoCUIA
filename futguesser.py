@@ -5,7 +5,6 @@ import sounddevice
 import speech_recognition as sr
 import random
 import threading
-import time
 import queue
 from faceRecognition import reconocerCaras, crearCodificacion
 import json
@@ -21,26 +20,19 @@ def cargar_json(filename):
             print("El archivo JSON esta vacio")
             return {}
 
-
+# Funcion para añadir un usuario al JSON
 def add_user(name, codificacion, file_path):
     data = cargar_json(file_path)
 
     data[name] = {
         "nombre": name,
-        "codificacion": codificacion[0].tolist(),  # Convert NumPy array to list
+        "codificacion": codificacion[0].tolist(),  
         "puntuacion": 0,
     }
 
     # Guardar el diccionario actualizado en el archivo
     with open(file_path, "w") as file:
         json.dump(data, file, indent=4)
-
-
-# Funcion para sobreescribir un mapa
-def guardar_json(mapa, filename):
-    # Guardar el mapa en el archivo JSON
-    with open(filename, "w") as file:
-        json.dump(mapa, file, indent=4)
 
 
 # Función que añade a una cola lo que se dice por el micrófono
@@ -63,11 +55,21 @@ def escuchar(colaVoz, eventoVoz):
                     transcripcion = None
                 colaVoz.put(transcripcion)
 
+def sumarPuntuacion(nombre, archivo):
+    with open(archivo, "r") as file:
+        data = json.load(file)
+
+    data[nombre]["puntuacion"] += 1
+
+    # Guardar el diccionario actualizado en el archivo
+    with open(archivo, "w") as file:
+        json.dump(data, file, indent=4)
+
 
 # Función que devuelve un equipo de fútbol aleatorio
 def randomTeam():
-    teams = ["Bayern Munich", "Betis"]
-    return teams[random.randint(0, 1)]
+    teams = ["Bayern Munich", "Betis", "Granada", "Rayo Vallecano", "Levante"]
+    return teams[random.randint(0, len(teams) - 1)]
 
 
 def main():
@@ -90,9 +92,7 @@ def main():
 
     # Inicialización de colas y listas
     usuarios = cargar_json("bbdd.json")    # Cargar los usuarios del archivo JSON
-    colaVoz = queue.Queue()
-    colaCodificaciones = queue.Queue()
-    carasConocidas, nombresConocidos = [], []
+    colaVoz = queue.Queue()  # Cola para almacenar lo que se dice por el microfono
 
     # Inicializar threads de voz y de cara
     evento_voz = threading.Event()
@@ -107,6 +107,9 @@ def main():
     texto = "Que equipo es?"
 
     inicioSesion = False
+    usuario = None
+
+    usuarios = cargar_json("bbdd.json")
 
     # Bucle principal
     while cap.isOpened():
@@ -126,32 +129,39 @@ def main():
         bg =  cv2.bitwise_and(fondo, mascarabg)
         framebgr = cv2.bitwise_or(fg, bg)
 
-
+        # Si la codificacion de la cara esta almacenada en el JSON
         if inicioSesion is True:
             respuesta = None
+            usuarios = cargar_json("bbdd.json") 
+            usuario = reconocerCaras(usuarios, framebgr)
             evento_voz.set()
             if not colaVoz.empty():
                 respuesta = colaVoz.get()
                 evento_voz.clear()
-                print(team, respuesta)
                 # Imprimir texto en la pantalla
-                if respuesta == team:
-                    texto = "Respuesta correcta!!"
-                    print("Texto: ", texto)
-                elif respuesta is not None:
-                    texto = f"Respuesta incorrecta: {respuesta}"
-                else:
-                    texto = "Que equipo es?"
+                if respuesta is not None:
+                    if team in respuesta:
+                        usuarios = cargar_json("bbdd.json") 
+                        sumarPuntuacion(usuario["nombre"], "bbdd.json")
+                        usuarios = cargar_json("bbdd.json") 
+                        punt = usuarios[usuario["nombre"]]["puntuacion"]
+                        texto = f"Respuesta correcta!! Puntuacion: {punt}"
+                    elif respuesta is not None:
+                        texto = f"Respuesta incorrecta: {respuesta}"
+                    else:
+                        texto = "Que equipo es?"
+                        
+        # Si la codificacion de la cara no esta almacenada en el JSON
         else:
             # Recargar JSON por si se crea un nuevo perfil
             usuarios = cargar_json("bbdd.json")
             # Iniciar sesión
-            nombre = reconocerCaras(usuarios, framebgr)
+            usuario = reconocerCaras(usuarios, framebgr)
             
-            if nombre is not None:
+            if usuario is not None:
                 inicioSesion = True
                 # Cargar sesion si se ha reconocido la cara
-                print(f"Bienvenido, {nombre}") 
+                print(f"Bienvenido, {usuario['nombre']}") 
             else:
                 # Crear perfil de usuario 
                 print("No se ha reconocido tu cara. Como te llamas?")
@@ -172,12 +182,18 @@ def main():
 
                         # Tomar frames para crear la codificación de la cara durante 3 segundos
                         codificacion = crearCodificacion(framebgr)
-                        add_user(nombre, codificacion, "bbdd.json")                   
+                        add_user(nombre, codificacion, "bbdd.json")
+                        usuario = {
+                            "nombre": nombre,
+                            "codificacion": codificacion[0].tolist(),
+                            "puntuacion": 0
+                        }                  
                         print("Usuario registrado. Bienvenido, " + nombre + ".")
                     
                 texto = "Bienvenido, " + nombre + ". Tu perfil ha sido creado"
                 cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)
                 cv2.imshow('FutGuesser - Guess the football team.', framebgr)
+                usuario = reconocerCaras(usuarios, framebgr)
                 inicioSesion = True
         
         cv2.putText(framebgr, texto, ubicacion, fuente, 2, color, 2)

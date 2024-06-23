@@ -38,7 +38,7 @@ def reconocerCaras(carasConocidas, framebgr):
     for cara in carasConocidas.values():
         known_face_encodings = cara["codificacion"]
         coincidencia = face_recognition.compare_faces([known_face_encodings], face_encodings[0])
-        if coincidencia is not None:
+        if coincidencia[0]:
             return cara
         
     return None
